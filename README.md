@@ -30,7 +30,8 @@ This experiment relies on server infrastructures from AWS to run on. With that, 
 ## Evaluation Criteria
 This section describes the evaluation criteria with which Elastic Search & MariaDB is to be evaluated.
 
-|S/No|Criteria|Elastic Search|MariaDB|
-|1   |Full-text Search| | |
-|2   |Auto-completion| | |
+|S/No|Criteria|Elastic Search|MariaDB|Remarks|
+|----|--------|--------------|-------|-------|
+|1   |Full-text Search| | | |
+|2   |Auto-completion| | | |
 
