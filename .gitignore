@@ -1,2 +1,8 @@
 # The name of the virtual env
 .eseval
+
+# This is a dynamically generated file
+unicast_hosts.txt
+
+# This file is dynamically generated
+elastic-certificates.p12
