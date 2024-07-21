@@ -1,0 +1,126 @@
+---
+
+- hosts: localhost
+  connection: local
+  gather_facts: False
+
+  tasks:
+
+    - name: Terminate every running instance in the default subnet. Use with EXTREME caution.
+      amazon.aws.ec2_instance:
+        state: absent
+        profile: '{{ aws.profile }}'
+        region: '{{ aws.region }}'
+        filters:
+          subnet-id: '{{ aws.dest_subnet }}'
+    
+    - debug:
+        msg: "Creating EC2 Instances"
+
+    - name: Start an instance with a public IP address
+      amazon.aws.ec2_instance:
+        name: "Elastic Search Instance"
+        key_name: '{{ aws.ec2_key_name }}'
+        profile: '{{ aws.profile }}'
+        region: '{{ aws.region }}'
+        # 8 vCPU 16 GB RAM
+        instance_type: c5.2xlarge
+        vpc_subnet_id: '{{ aws.dest_subnet }}'
+        network:
+          assign_public_ip: true
+          delete_on_termination: true
+        volumes:
+          - device_name: /dev/sda1
+            ebs:
+              volume_size: 30
+              delete_on_termination: true
+        count: 1
+        security_group: default
+        image_id: ami-060e277c0d4cce553
+        tags:
+          Environment: Elastic Search Evaluation
+      register: ec2
+
+    - name: Add EC2 instances to hosts
+      add_host:
+        name: '{{ item.public_dns_name }}'
+        groups: es_nodes_group
+      loop: '{{ ec2.instances }}'
+
+    - name: Wait for SSH to come up
+      delegate_to: '{{ item.public_dns_name }}'
+      wait_for_connection:
+        delay: 30
+        timeout: 600
+      loop: '{{ ec2.instances }}'
+
+    - debug:
+        msg: "EC2 Public DNS Name: {{ item.public_dns_name }}"
+      loop: '{{ ec2.instances }}'
+
+# Elastic Search comes with a default jdk so there's no need to install another one
+# - name: Install Java 21
+#   hosts: es_nodes_group 
+#   gather_facts: False
+#   remote_user: ubuntu
+#   tasks:
+# 
+#     - name: Install Java 21
+#       ansible.builtin.apt:
+#         name: openjdk-21-jdk
+#       become: yes
+# 
+#     - name: Check Java
+#       ansible.builtin.raw: java --version
+#       register: java_version_output
+# 
+#     - debug:
+#         msg: 'Java Version: {{ java_version_output }}'
+    
+- name: Install Elastic Search
+  hosts: es_nodes_group 
+  gather_facts: True
+  remote_user: ubuntu
+  vars:
+    elasticsearch_version: elasticsearch-8.14.3
+    elasticsearch_arch: linux-x86_64
+  tasks:
+    - name: Create Elastic Search Directory
+      ansible.builtin.file:
+        path: /opt/elasticsearch
+        owner: ubuntu
+        group: ubuntu
+        state: directory
+        mode: '0755'
+      become: yes
+
+    - name: Download Elastic Search
+      ansible.builtin.get_url:
+        url: 'https://artifacts.elastic.co/downloads/elasticsearch/{{ elasticsearch_version }}-{{ elasticsearch_arch }}.tar.gz'
+        dest: '/opt/elasticsearch/{{ elasticsearch_version }}-{{ elasticsearch_arch }}.tar.gz'
+        checksum: 'sha512:https://artifacts.elastic.co/downloads/elasticsearch/{{ elasticsearch_version }}-{{ elasticsearch_arch }}.tar.gz.sha512'
+
+    - name: Extract Elastic Search
+      ansible.builtin.unarchive:
+        src: '/opt/elasticsearch/{{ elasticsearch_version }}-{{ elasticsearch_arch }}.tar.gz'
+        dest: /opt/elasticsearch/
+        owner: ubuntu
+        group: ubuntu
+        remote_src: yes
+
+    - amazon.aws.ec2_metadata_facts:
+
+    - debug:
+        msg: 'Private DNS: {{ ansible_ec2_hostname }}'
+
+    - name: Set cluster name
+      ansible.builtin.lineinfile:
+        path: '/opt/elasticsearch/{{ elasticsearch_version }}/config/elasticsearch.yml'
+        regexp: '^#cluster\.name:.*$'
+        line: 'cluster.name: es-evaluation'
+
+    - name: Set node name
+      ansible.builtin.lineinfile:
+        path: '/opt/elasticsearch/{{ elasticsearch_version }}/config/elasticsearch.yml'
+        regexp: '^#node\.name:.*$'
+        line: 'node.name: {{ ansible_ec2_hostname }}'
