@@ -47,6 +47,11 @@
         groups: es_nodes_group
       loop: '{{ ec2.instances }}'
 
+    - name: Collects private dns names of the EC2 instances into the es_private_dns_names list
+      set_fact:
+        es_private_dns_names: "{{ es_private_dns_names | default([]) + [ item.private_dns_name | string ] }}"
+      loop: '{{ ec2.instances }}'
+
     - name: Wait for SSH to come up
       delegate_to: '{{ item.public_dns_name }}'
       wait_for_connection:
@@ -57,6 +62,16 @@
     - debug:
         msg: "EC2 Public DNS Name: {{ item.public_dns_name }}"
       loop: '{{ ec2.instances }}'
+
+    - name: Print out the cluster private names
+      debug:
+        msg: "{{ es_private_dns_names | join(', ') }}"
+
+    - name: Prepare unicast_hosts.txt
+      ansible.builtin.copy:
+        content: "{{ es_private_dns_names | join('\n') }}"
+        dest: ./unicast_hosts.txt
+      delegate_to: localhost
 
 # Elastic Search comes with a default jdk so there's no need to install another one
 # - name: Install Java 21
@@ -82,8 +97,9 @@
   gather_facts: True
   remote_user: ubuntu
   vars:
-    elasticsearch_version: elasticsearch-8.14.3
     elasticsearch_arch: linux-x86_64
+    elasticsearch_data_dir: /opt/elasticsearch/data
+    elasticsearch_log_dir: /opt/elasticsearch/log
   tasks:
     - name: Create Elastic Search Directory
       ansible.builtin.file:
@@ -96,13 +112,13 @@
 
     - name: Download Elastic Search
       ansible.builtin.get_url:
-        url: 'https://artifacts.elastic.co/downloads/elasticsearch/{{ elasticsearch_version }}-{{ elasticsearch_arch }}.tar.gz'
-        dest: '/opt/elasticsearch/{{ elasticsearch_version }}-{{ elasticsearch_arch }}.tar.gz'
-        checksum: 'sha512:https://artifacts.elastic.co/downloads/elasticsearch/{{ elasticsearch_version }}-{{ elasticsearch_arch }}.tar.gz.sha512'
+        url: 'https://artifacts.elastic.co/downloads/elasticsearch/{{ elasticsearch.version }}-{{ elasticsearch_arch }}.tar.gz'
+        dest: '/opt/elasticsearch/{{ elasticsearch.version }}-{{ elasticsearch_arch }}.tar.gz'
+        checksum: 'sha512:https://artifacts.elastic.co/downloads/elasticsearch/{{ elasticsearch.version }}-{{ elasticsearch_arch }}.tar.gz.sha512'
 
     - name: Extract Elastic Search
       ansible.builtin.unarchive:
-        src: '/opt/elasticsearch/{{ elasticsearch_version }}-{{ elasticsearch_arch }}.tar.gz'
+        src: '/opt/elasticsearch/{{ elasticsearch.version }}-{{ elasticsearch_arch }}.tar.gz'
         dest: /opt/elasticsearch/
         owner: ubuntu
         group: ubuntu
@@ -115,12 +131,81 @@
 
     - name: Set cluster name
       ansible.builtin.lineinfile:
-        path: '/opt/elasticsearch/{{ elasticsearch_version }}/config/elasticsearch.yml'
+        path: '/opt/elasticsearch/{{ elasticsearch.version }}/config/elasticsearch.yml'
         regexp: '^#cluster\.name:.*$'
         line: 'cluster.name: es-evaluation'
 
     - name: Set node name
       ansible.builtin.lineinfile:
-        path: '/opt/elasticsearch/{{ elasticsearch_version }}/config/elasticsearch.yml'
+        path: '/opt/elasticsearch/{{ elasticsearch.version }}/config/elasticsearch.yml'
         regexp: '^#node\.name:.*$'
         line: 'node.name: {{ ansible_ec2_hostname }}'
+
+    - name: Set data directory
+      ansible.builtin.lineinfile:
+        path: '/opt/elasticsearch/{{ elasticsearch.version }}/config/elasticsearch.yml'
+        regexp: '^#path\.data:.*$'
+        line: 'path.data: {{ elasticsearch_data_dir }}'
+
+    - name: Set log directory
+      ansible.builtin.lineinfile:
+        path: '/opt/elasticsearch/{{ elasticsearch.version }}/config/elasticsearch.yml'
+        regexp: '^#path\.logs:.*$'
+        line: 'path.logs: {{ elasticsearch_log_dir }}'
+
+    - name: Listen on the private IP
+      ansible.builtin.lineinfile:
+        path: '/opt/elasticsearch/{{ elasticsearch.version }}/config/elasticsearch.yml'
+        regexp: '^#network\.host:.*$'
+        line: 'network.host: {{ ansible_ec2_instance_identity_document_privateip }}'
+
+    - name: Set discovery.seed_providers
+      ansible.builtin.lineinfile:
+        path: '/opt/elasticsearch/{{ elasticsearch.version }}/config/elasticsearch.yml'
+        regexp: '^#discovery.seed_hosts.*$'
+        line: "discovery.seed_providers: file"
+
+    - name: Copy unicast_hosts.txt to elastic search node
+      ansible.builtin.copy:
+        src: unicast_hosts.txt
+        dest: '/opt/elasticsearch/{{ elasticsearch.version }}/config/unicast_hosts.txt'
+        mode: '0644'
+
+    - name: Enable elastic search security settings
+      ansible.builtin.blockinfile:
+        path: '/opt/elasticsearch/{{ elasticsearch.version }}/config/elasticsearch.yml'
+        block: |
+          xpack.security.transport.ssl.enabled: true
+          xpack.security.transport.ssl.verification_mode: certificate
+          xpack.security.transport.ssl.client_authentication: required
+          xpack.security.transport.ssl.keystore.path: elastic-certificates.p12
+          xpack.security.transport.ssl.truststore.path: elastic-certificates.p12
+          xpack.security.http.ssl.enabled: true
+
+- name: Generate Certificates
+  hosts: es_nodes_group[0]
+  gather_facts: True
+  remote_user: ubuntu
+  tasks:
+    - name: Generate the certificate authority
+      ansible.builtin.expect:
+        chdir: '/opt/elasticsearch/{{ elasticsearch.version }}'
+        command: './bin/elasticsearch-certutil ca'
+        responses:
+          "Please enter the desired output file": ''
+          "Enter password for": ''
+
+    - name: Generate Cert & Private Keys
+      ansible.builtin.expect:
+        chdir: '/opt/elasticsearch/{{ elasticsearch.version }}'
+        command: './bin/elasticsearch-certutil cert --ca elastic-stack-ca.p12'
+        responses:
+          "Enter password for CA": ''
+          "Please enter the desired output file": ''
+          "Enter password for elastic-certificates.p12": ''
+
+    - name: Copy generated certs to local
+      ansible.builtin.fetch:
+        src: '/opt/elasticsearch/{{ elasticsearch.version }}/elastic-certificates.p12'
+        dest: './'
+        flat: true

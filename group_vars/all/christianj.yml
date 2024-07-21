@@ -3,3 +3,5 @@ aws:
   ec2_key_name: christian_mbp15
   region: ap-southeast-1
   dest_subnet: subnet-062d6e0c8ac981170
+elasticsearch:
+  version: elasticsearch-8.14.3
