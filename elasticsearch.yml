@@ -34,7 +34,7 @@
             ebs:
               volume_size: 30
               delete_on_termination: true
-        count: 1
+        count: 3
         security_group: default
         image_id: ami-060e277c0d4cce553
         tags:
@@ -171,8 +171,8 @@
           xpack.security.http.ssl.enabled: true
           xpack.security.http.ssl.keystore.path: http.p12
 
-# We generate the certs in just one of the node
-- name: Login on one of the node to generate the certificates
+# We generate the certs in just one of the nodes
+- name: Logging in to one of the nodes to generate the certificates
   hosts: es_nodes_group[0]
   gather_facts: True
   remote_user: ubuntu
@@ -234,9 +234,41 @@
         dest: './'
         flat: true
 
-- name: Setup certificates on all nodes
-  hosts: es_nodes_group
-  gather_facts: True
+    - name: Move p12 certs to config directory
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/opt/elasticsearch/{{ elasticsearch.version }}/config/"
+        remote_src: yes
+      loop:
+        - '/opt/elasticsearch/{{ elasticsearch.version }}/http.p12'
+        - '/opt/elasticsearch/{{ elasticsearch.version }}/elastic-certificates.p12'
+
+    - name: Start the initial master node
+      ansible.builtin.shell: "nohup ./bin/elasticsearch </dev/null >/dev/null 2>&1 &"
+      args:
+        chdir: '/opt/elasticsearch/{{ elasticsearch.version }}'
+      register: espid
+
+    - debug:
+        msg: "Master Node PID: {{ espid }}"
+
+    - name: Wait for elastic search to boot
+      ansible.builtin.wait_for:
+        path: '/opt/elasticsearch/log/es-evaluation.log'
+        search_regex: mode \[basic\] - valid
+
+    - name: Set default password for user elastic
+      ansible.builtin.expect:
+        chdir: '/opt/elasticsearch/{{ elasticsearch.version }}'
+        command: './bin/elasticsearch-reset-password -i -u elastic'
+        responses:
+          "Please confirm that you would like to continue": 'y'
+          "Enter password for": 'elastic'
+          "Re-enter password for": 'elastic'
+
+- name: Setup certificates on other data nodes
+  hosts: es_nodes_group[1:]
+  gather_facts: False
   remote_user: ubuntu
   tasks:
 
@@ -251,3 +283,10 @@
         src: http.p12
         dest: '/opt/elasticsearch/{{ elasticsearch.version }}/config/http.p12'
         mode: '0644'
+
+    - name: Start the other data nodes
+      ansible.builtin.shell: "nohup ./bin/elasticsearch </dev/null >/dev/null 2>&1 &"
+      args:
+        chdir: '/opt/elasticsearch/{{ elasticsearch.version }}'
+      register: espid
+
