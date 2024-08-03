@@ -209,13 +209,30 @@
         dest: './'
         flat: true
 
-    # TODO: Get all hostnames and private IPs of the servers in the cluster
-    #  so that we can configure the TLS cert
-    # - name: Generate HTTPS Cert
-    #  ansible.builtin.command: ./bin/elasticsearch-certutil cert --ca ./elastic-certificates.p12 --ca-pass ''  
-    #  args:
-    #    chdir: '/opt/elasticsearch/{{ elasticsearch.version }}'
+    - name: Read Private Hostnames from unicast_hosts file
+      set_fact:
+        es_private_dns_names: "{{ es_private_dns_names | default([]) + [ item | string ] }}"
+      loop: "{{ lookup('file', 'unicast_hosts.txt').split('\n') }}"
 
+    # Obtain cluster private IP addresses from private dns names
+    - name: Private IP Addresses
+      set_fact:
+        es_private_ip_addrs: "{{ es_private_ip_addrs | default([]) + [ item.split('.')[0].replace('ip-', '').replace('-','.') | string ] }}"
+      loop: "{{ es_private_dns_names }}"
+    
+    - debug:
+        msg: "Private DNS2: {{ es_private_dns_names }} {{ es_private_ip_addrs }}"
+
+    - name: Generate HTTPS Cert
+      ansible.builtin.command: ./bin/elasticsearch-certutil cert --ca ./elastic-stack-ca.p12 --ca-pass "" --dns "{{ es_private_dns_names | join(',') }}" --ip "{{ es_private_ip_addrs | join(',') }}" --out http.p12 --days 512 --pass ""
+      args:
+        chdir: '/opt/elasticsearch/{{ elasticsearch.version }}'
+
+    - name: Copy generated HTTPS Cert
+      ansible.builtin.fetch:
+        src: '/opt/elasticsearch/{{ elasticsearch.version }}/http.p12'
+        dest: './'
+        flat: true
 
 - name: Setup certificates on all nodes
   hosts: es_nodes_group
@@ -229,3 +246,8 @@
         dest: '/opt/elasticsearch/{{ elasticsearch.version }}/config/elastic-certificates.p12'
         mode: '0644'
 
+    - name: Setup HTTPS certificate
+      ansible.builtin.copy:
+        src: http.p12
+        dest: '/opt/elasticsearch/{{ elasticsearch.version }}/config/http.p12'
+        mode: '0644'
