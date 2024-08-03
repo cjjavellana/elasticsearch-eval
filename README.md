@@ -23,7 +23,10 @@ $ ansible-galaxy collection install --force amazon.aws
 ```
 
 3. Setup AWS Account
-This experiment relies on server infrastructures from AWS to run on. With that, ensure that you have an AWS account and that IAM users have been provisioned correctly.
+
+This experiment relies on AWS. Ensure that you have an AWS account and that IAM users have been provisioned correctly.
+
+A few hundred EC2 VMs were harmed in building this script.
 
 ## The Test Data
 
@@ -34,4 +37,5 @@ This section describes the evaluation criteria with which Elastic Search & Maria
 |----|--------|--------------|-------|-------|
 |1   |Full-text Search| | | |
 |2   |Auto-completion| | | |
+
 
