@@ -73,25 +73,6 @@
         dest: ./unicast_hosts.txt
       delegate_to: localhost
 
-# Elastic Search comes with a default jdk so there's no need to install another one
-# - name: Install Java 21
-#   hosts: es_nodes_group 
-#   gather_facts: False
-#   remote_user: ubuntu
-#   tasks:
-# 
-#     - name: Install Java 21
-#       ansible.builtin.apt:
-#         name: openjdk-21-jdk
-#       become: yes
-# 
-#     - name: Check Java
-#       ansible.builtin.raw: java --version
-#       register: java_version_output
-# 
-#     - debug:
-#         msg: 'Java Version: {{ java_version_output }}'
-    
 - name: Install Elastic Search
   hosts: es_nodes_group 
   gather_facts: True
@@ -101,6 +82,11 @@
     elasticsearch_data_dir: /opt/elasticsearch/data
     elasticsearch_log_dir: /opt/elasticsearch/log
   tasks:
+    - name: Install Unzip
+      ansible.builtin.apt:
+        name: unzip
+      become: yes
+
     - name: Create Elastic Search Directory
       ansible.builtin.file:
         path: /opt/elasticsearch
@@ -174,19 +160,32 @@
     - name: Enable elastic search security settings
       ansible.builtin.blockinfile:
         path: '/opt/elasticsearch/{{ elasticsearch.version }}/config/elasticsearch.yml'
+        marker: "# Ansible Managed Block (Set security settings)"
         block: |
           xpack.security.transport.ssl.enabled: true
           xpack.security.transport.ssl.verification_mode: certificate
           xpack.security.transport.ssl.client_authentication: required
           xpack.security.transport.ssl.keystore.path: elastic-certificates.p12
           xpack.security.transport.ssl.truststore.path: elastic-certificates.p12
-          xpack.security.http.ssl.enabled: true
 
-- name: Generate Certificates
+          xpack.security.http.ssl.enabled: true
+          xpack.security.http.ssl.keystore.path: http.p12
+
+# We generate the certs in just one of the node
+- name: Login on one of the node to generate the certificates
   hosts: es_nodes_group[0]
   gather_facts: True
   remote_user: ubuntu
   tasks:
+    - amazon.aws.ec2_metadata_facts:
+
+    - name: Set the initial master node on the first server
+      ansible.builtin.blockinfile:
+        path: '/opt/elasticsearch/{{ elasticsearch.version }}/config/elasticsearch.yml'
+        marker: "# Ansible Managed Block (Set Initial Master Nodes)"
+        block: |
+          cluster.initial_master_nodes: ["{{ ansible_ec2_hostname }}"]
+ 
     - name: Generate the certificate authority
       ansible.builtin.expect:
         chdir: '/opt/elasticsearch/{{ elasticsearch.version }}'
@@ -209,3 +208,24 @@
         src: '/opt/elasticsearch/{{ elasticsearch.version }}/elastic-certificates.p12'
         dest: './'
         flat: true
+
+    # TODO: Get all hostnames and private IPs of the servers in the cluster
+    #  so that we can configure the TLS cert
+    # - name: Generate HTTPS Cert
+    #  ansible.builtin.command: ./bin/elasticsearch-certutil cert --ca ./elastic-certificates.p12 --ca-pass ''  
+    #  args:
+    #    chdir: '/opt/elasticsearch/{{ elasticsearch.version }}'
+
+
+- name: Setup certificates on all nodes
+  hosts: es_nodes_group
+  gather_facts: True
+  remote_user: ubuntu
+  tasks:
+
+    - name: Setup certificate
+      ansible.builtin.copy:
+        src: elastic-certificates.p12
+        dest: '/opt/elasticsearch/{{ elasticsearch.version }}/config/elastic-certificates.p12'
+        mode: '0644'
+
