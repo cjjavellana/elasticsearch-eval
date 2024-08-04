@@ -7,3 +7,7 @@ unicast_hosts.txt
 # This file is dynamically generated
 elastic-certificates.p12
 http.p12
+
+**/__pycache__
+**/.venv
+**/test_data_dir
