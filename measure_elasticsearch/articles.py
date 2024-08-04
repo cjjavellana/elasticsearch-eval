@@ -59,7 +59,7 @@ class WikipediaDatasetLoader:
             self.q.task_done()
 
 
-class ElasticSearchBenchMark:
+class ElasticSearchBenchmark:
 
     def __init__(self, max_index = 3):
        self.dataset_downloader = IndexedDatasetDownloader(max_index = max_index)
@@ -75,7 +75,7 @@ if __name__ == '__main__':
     print(args)
 
     if args.target == 'elasticsearch':
-        benchmark = ElasticSearchBenchMark(max_index=args.max_index)
+        benchmark = ElasticSearchBenchmark(max_index=args.max_index)
         benchmark.take()
     if args.target == 'mariadb':
         pass
