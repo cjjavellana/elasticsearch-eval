@@ -6,40 +6,12 @@
 
   tasks:
 
-    - name: Terminate every running instance in the default subnet. Use with EXTREME caution.
-      amazon.aws.ec2_instance:
-        state: absent
-        profile: '{{ aws.profile }}'
-        region: '{{ aws.region }}'
-        filters:
-          subnet-id: '{{ aws.dest_subnet }}'
-    
-    - debug:
-        msg: "Creating EC2 Instances"
-
-    - name: Start an instance with a public IP address
-      amazon.aws.ec2_instance:
-        name: "Elastic Search Instance"
-        key_name: '{{ aws.ec2_key_name }}'
-        profile: '{{ aws.profile }}'
-        region: '{{ aws.region }}'
-        # 8 vCPU 16 GB RAM
-        instance_type: c5.2xlarge
-        vpc_subnet_id: '{{ aws.dest_subnet }}'
-        network:
-          assign_public_ip: true
-          delete_on_termination: true
-        volumes:
-          - device_name: /dev/sda1
-            ebs:
-              volume_size: 30
-              delete_on_termination: true
+    - import_tasks: ec2.yml
+      vars:
+        ec2_name: Elastic Search Instance
+        ec2_environment: Elastic Search Evaluation
         count: 3
-        security_group: default
-        image_id: ami-060e277c0d4cce553
-        tags:
-          Environment: Elastic Search Evaluation
-      register: ec2
+        volume_size_gb: 300
 
     - name: Add EC2 instances to hosts
       add_host:

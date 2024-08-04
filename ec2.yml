@@ -1,0 +1,37 @@
+---
+
+- name: Terminate every running instance in the default subnet. Use with EXTREME caution.
+  amazon.aws.ec2_instance:
+    state: absent
+    profile: '{{ aws.profile }}'
+    region: '{{ aws.region }}'
+    filters:
+      subnet-id: '{{ aws.dest_subnet }}'
+    
+- debug:
+    msg: "Creating EC2 Instances"
+
+- name: Start an instance with a public IP address
+  amazon.aws.ec2_instance:
+    name: "{{ ec2_name }}"
+    key_name: '{{ aws.ec2_key_name }}'
+    profile: '{{ aws.profile }}'
+    region: '{{ aws.region }}'
+    # 8 vCPU 16 GB RAM
+    instance_type: c5.2xlarge
+    vpc_subnet_id: '{{ aws.dest_subnet }}'
+    network:
+      assign_public_ip: true
+      delete_on_termination: true
+    volumes:
+      - device_name: /dev/sda1
+        ebs:
+          volume_size: "{{ volume_size_gb }}"
+          delete_on_termination: true
+    count: "{{ count }}"
+    security_group: default
+    image_id: ami-060e277c0d4cce553
+    tags:
+      Environment: "{{ ec2_environment }}"
+  register: ec2
+
