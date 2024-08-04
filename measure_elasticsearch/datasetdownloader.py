@@ -26,7 +26,7 @@ class IndexedDatasetDownloader:
         self.worker_active = True
         self.q = queue.Queue()
 
-    def load(self):
+    def download(self):
         # Create data dir (if not present)
         Path(self.dest_data_dir).mkdir(parents=True, exist_ok=True)
 
