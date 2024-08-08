@@ -6,6 +6,7 @@ import numbers
 
 import pyarrow.dataset as ds
 
+from elasticsearch import Elasticsearch
 from datasetdownloader import IndexedDatasetDownloader
 
 parser = argparse.ArgumentParser(description='Take full-text search benchmark between elastic search & mariadb')
@@ -22,11 +23,14 @@ class MariaDBSink:
 
 class ElasticSearchSink:
 
-    def __init__(self):
-        pass
+    def __init__(self, elastic_url, username = None, password = None):
+        self.elastic_url = elastic_url
+        self.username = username
+        self.password = password
+        self.elastic_client = Elasticsearch(self.elastic_url)
 
-    def save(data):
-        pass
+    def save(self, index, document):
+        return self.elastic_client.index(index=index, document=document)
 
 class WikipediaDatasetLoader:
 
@@ -60,7 +64,7 @@ class WikipediaDatasetLoader:
         wikipedia_dataset = ds.dataset(self.src_data_dir, format="parquet")
         print(f'{wikipedia_dataset.files}')
 
-        for table_chunk in wikipedia_dataset.to_batches(columns=["url", "title"]):
+        for table_chunk in wikipedia_dataset.to_batches(columns=["url", "title", "text"]):
             title = table_chunk.to_pandas()
             self.q.put(title)
 
@@ -73,7 +77,7 @@ class WikipediaDatasetLoader:
         while True:
             item = self.q.get()
 
-            if isinstance(item, numbers.Number) and item == self.POISON_PILL:
+            if self.__should_quit(item):
                 self.q.task_done()
                 break
            
@@ -85,6 +89,8 @@ class WikipediaDatasetLoader:
         
         print(f'Terminating {threading.get_native_id()}')
 
+    def __should_quit(self, item):
+        return isinstance(item, numbers.Number) and item == self.POISON_PILL
 
 class ElasticSearchBenchmark:
 
@@ -92,7 +98,9 @@ class ElasticSearchBenchmark:
         data_dir = './test_data_dir'
         self.dataset_downloader = IndexedDatasetDownloader(max_index = max_index, dest_data_dir=data_dir)
         self.dataset_loader = WikipediaDatasetLoader(
-                sink = ElasticSearchSink(), max_index = max_index, src_data_dir = data_dir)
+                sink = ElasticSearchSink(elastic_url = 'http://localhost:9200'),
+                max_index = max_index,
+                src_data_dir = data_dir)
 
     def take(self):
         self.dataset_downloader.download()
