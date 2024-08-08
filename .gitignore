@@ -11,3 +11,7 @@ http.p12
 **/__pycache__
 **/.venv
 **/test_data_dir
+
+# This is a transient dir mounted to the elasticsearch container
+# for holding test data
+measure_elasticsearch/elasticsearch
