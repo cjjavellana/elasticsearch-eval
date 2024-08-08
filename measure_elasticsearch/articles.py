@@ -2,6 +2,9 @@ import argparse
 import threading
 import queue
 import requests
+import numbers
+
+import pyarrow.dataset as ds
 
 from datasetdownloader import IndexedDatasetDownloader
 
@@ -10,7 +13,7 @@ parser.add_argument('-t', '--target',
                     choices=['elasticsearch', 'mariadb'],
                     required=True,
                     help='That target datastore.')
-parser.add_argument('-m', '--max-index', dest='max_index', type=int, help='The maximum number of files to download')
+parser.add_argument('-n', '--num-files', dest='num_files', type=int, help='The number of files to download')
 
 class MariaDBSink:
 
@@ -27,6 +30,8 @@ class ElasticSearchSink:
 
 class WikipediaDatasetLoader:
 
+    POISON_PILL = -1
+
     # 
     # @param sink - The persistent store to load data to
     # @param thread_count - The number of file readers to open
@@ -39,32 +44,55 @@ class WikipediaDatasetLoader:
         self.thread_count = thread_count
         # queue used for loading multiple dataset files concurrently
         self.q = queue.Queue()
-        self.is_worker_active = True
 
     def load(self):
-        # Create background workers
+        # Create consumer threads
         for x in range(self.thread_count):
-            threading.Thread(target=self.__load_internal, daemon=True).start()
+            threading.Thread(target=self.__data_consumer, daemon=True).start()
 
-        # Put the task into the queue for processing
-        for x in range(self.max_index):
-            self.q.put(x)
+        self.__produce_data()
+        
+        # Wait for tasks to complete
+        self.q.join()
 
-        self.q.join() 
+    def __produce_data(self):
+        # Open the dataset
+        wikipedia_dataset = ds.dataset(self.src_data_dir, format="parquet")
+        print(f'{wikipedia_dataset.files}')
 
-    def __load_internal(self):
-        while self.is_worker_active:
+        for table_chunk in wikipedia_dataset.to_batches(columns=["url", "title"]):
+            title = table_chunk.to_pandas()
+            self.q.put(title)
+
+        # After we have put all the wikipedia data into the queue
+        # Put the poison pill to signal to the consumer thread to shutdown
+        for x in range(self.thread_count):
+            self.q.put(self.POISON_PILL)
+
+    def __data_consumer(self):
+        while True:
             item = self.q.get()
-            print(f'{threading.get_native_id()} Working on {item}')
+
+            if isinstance(item, numbers.Number) and item == self.POISON_PILL:
+                self.q.task_done()
+                break
+           
+            # Item is a pandas DataFrame
+            for idx in item.index:
+                print(f"{threading.get_native_id()} => {item['url'][idx]} : {item['title'][idx]}")
+
             self.q.task_done()
+        
+        print(f'Terminating {threading.get_native_id()}')
 
 
 class ElasticSearchBenchmark:
 
     def __init__(self, max_index = 3):
-       self.dataset_downloader = IndexedDatasetDownloader(max_index = max_index)
-       self.dataset_loader = WikipediaDatasetLoader(
-               sink = ElasticSearchSink(), max_index = max_index, src_data_dir = './test_data_dir')
+        data_dir = './test_data_dir'
+        self.dataset_downloader = IndexedDatasetDownloader(max_index = max_index, dest_data_dir=data_dir)
+        self.dataset_loader = WikipediaDatasetLoader(
+                sink = ElasticSearchSink(), max_index = max_index, src_data_dir = data_dir)
 
     def take(self):
         self.dataset_downloader.download()
@@ -75,7 +103,7 @@ if __name__ == '__main__':
     print(args)
 
     if args.target == 'elasticsearch':
-        benchmark = ElasticSearchBenchmark(max_index=args.max_index)
+        benchmark = ElasticSearchBenchmark(max_index=args.num_files)
         benchmark.take()
     if args.target == 'mariadb':
         pass
