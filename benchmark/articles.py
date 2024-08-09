@@ -19,6 +19,7 @@ parser.add_argument('-n', '--num-files', dest='num_files', type=int, help='The n
 parser.add_argument('-c', '--ingest-thread-count', dest='ingest_thread_count', default=5, type=int, help='The number of threads to be used to write data to the destination datastore')
 parser.add_argument('--elastic-url', dest='elastic_url', default='http://localhost:9200', help='The url of the elastic search cluster. Comma delimited.')
 parser.add_argument('--elastic-username', dest='elastic_username', default='elastic', help='The username of the elastic search cluster')
+parser.add_argument('--elastic-ca-cert', dest='elastic_ca_cert', help='The location of the CA Cert (in pem format)')
 parser.add_argument('--elastic-password', dest='elastic_password', default='elastic', help='The password of the elastic search cluster')
 parser.add_argument('--skip-download-dataset', dest='skip_download_dataset', action=argparse.BooleanOptionalAction, help='Skips downloading dataset')
 
@@ -41,11 +42,17 @@ class MariaDBSink:
 
 class ElasticSearchSink:
 
-    def __init__(self, index, elastic_url, username = None, password = None):
+    def __init__(self, index, elastic_url, username = None, password = None, ca_certs = None):
         self.elastic_url = elastic_url
         self.username = username
         self.index = index
-        self.elastic_client = Elasticsearch(self.elastic_url, basic_auth=(username, password))
+        self.elastic_client = None
+
+        if ca_certs == None:
+            self.elastic_client = Elasticsearch(self.elastic_url, basic_auth=(username, password))
+        else:
+            self.elastic_client = Elasticsearch(self.elastic_url, ca_certs = ca_certs, basic_auth=(username, password))
+
         print(f'Client Info {self.elastic_client.info()}')
 
     def save(self, article):
@@ -171,6 +178,7 @@ if __name__ == '__main__':
                 sink = ElasticSearchSink(
                     elastic_url = args.elastic_url,
                     index='idx-articles',
+                    ca_certs = args.elastic_ca_cert,
                     username = args.elastic_username,
                     password = args.elastic_password,
                 ),
