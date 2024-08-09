@@ -21,6 +21,11 @@ parser.add_argument('--elastic-url', dest='elastic_url', help='The url of the el
 parser.add_argument('--elastic-username', dest='elastic_username', default='elastic', help='The username of the elastic search cluster')
 parser.add_argument('--elastic-password', dest='elastic_password', help='The password of the elastic search cluster')
 
+class IngestStats:
+
+    def __init__(self, num_records):
+        self.num_records = num_records
+
 class MariaDBSink:
 
     def __init__(self):
@@ -37,6 +42,10 @@ class ElasticSearchSink:
 
     def save(self, document):
         return self.elastic_client.index(index=self.index, document=document)
+
+    def stats(self):
+        document_count = self.elastic_client.count(index=self.index)
+        return IngestStats(num_records=document_count['count'])
 
 class WikipediaDatasetLoader:
 
@@ -64,11 +73,13 @@ class WikipediaDatasetLoader:
         # Wait for tasks to complete
         self.q.join()
 
+        return self.sink.stats()
+
     def __produce_data(self):
         # Open the dataset
         wikipedia_dataset = ds.dataset(self.src_data_dir, format="parquet")
 
-        for table_chunk in wikipedia_dataset.to_batches(columns=["id", "url", "title", "text"]):
+        for table_chunk in wikipedia_dataset.to_batches(columns=["url", "title", "text"]):
             title = table_chunk.to_pandas()
             self.q.put(title)
 
@@ -88,11 +99,10 @@ class WikipediaDatasetLoader:
             # Item is a pandas DataFrame
             for idx in item.index:
                 # Construct an elasticsearch document
-                id = item['id'][idx]
                 url = item['url'][idx]
                 title = item['title'][idx]
                 text = item['text'][idx]
-                print(f"{threading.get_native_id()} => {id}: {url}")
+                print(f"{threading.get_native_id()} => {url}")
 
                 document = {
                     "url": url,
@@ -133,14 +143,21 @@ class ElasticSearchBenchmark:
             )
 
     def take(self):
+        download_start_time = time.time()
         self.dataset_downloader.download()
-        self.dataset_loader.load()
+        download_end_time = time.time()
+
+        ingest_start_time = time.time()
+        load_stats = self.dataset_loader.load()
+        ingest_end_time = time.time()
+
+        print(f'Download Elapsed Time: {download_end_time - download_start_time} seconds')
+        print(f'Loaded {load_stats.num_records} documents in {ingest_end_time - ingest_start_time} seconds')
 
 if __name__ == '__main__':
     args = parser.parse_args()
     print(args)
 
-    start_time = time.time()
     if args.target == 'elasticsearch':
         benchmark = ElasticSearchBenchmark(
                 max_index=args.num_files,
@@ -149,7 +166,4 @@ if __name__ == '__main__':
         benchmark.take()
     if args.target == 'mariadb':
         pass
-
-    end_time = time.time()
-    print(f'Total Elapsed Time: {end_time - start_time} seconds')
 
