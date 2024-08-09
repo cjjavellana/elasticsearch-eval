@@ -3,6 +3,7 @@ import threading
 import queue
 import requests
 import numbers
+import time
 
 import pyarrow.dataset as ds
 
@@ -15,6 +16,10 @@ parser.add_argument('-t', '--target',
                     required=True,
                     help='That target datastore.')
 parser.add_argument('-n', '--num-files', dest='num_files', type=int, help='The number of files to download')
+parser.add_argument('-c', '--ingest-thread-count', dest='ingest_thread_count', default=5, type=int, help='The number of threads to be used to write data to the destination datastore')
+parser.add_argument('--elastic-url', dest='elastic_url', help='The url of the elastic search cluster. Comma delimited.')
+parser.add_argument('--elastic-username', dest='elastic_username', default='elastic', help='The username of the elastic search cluster')
+parser.add_argument('--elastic-password', dest='elastic_password', help='The password of the elastic search cluster')
 
 class MariaDBSink:
 
@@ -23,14 +28,15 @@ class MariaDBSink:
 
 class ElasticSearchSink:
 
-    def __init__(self, elastic_url, username = None, password = None):
+    def __init__(self, index, elastic_url, username = None, password = None):
         self.elastic_url = elastic_url
         self.username = username
-        self.password = password
-        self.elastic_client = Elasticsearch(self.elastic_url)
+        self.index = index
+        self.elastic_client = Elasticsearch(self.elastic_url, basic_auth=(username, password))
+        print(f'Client Info {self.elastic_client.info()}')
 
-    def save(self, index, document):
-        return self.elastic_client.index(index=index, document=document)
+    def save(self, document):
+        return self.elastic_client.index(index=self.index, document=document)
 
 class WikipediaDatasetLoader:
 
@@ -40,10 +46,9 @@ class WikipediaDatasetLoader:
     # @param sink - The persistent store to load data to
     # @param thread_count - The number of file readers to open
     # @param src_data_dir - The directory where the test data is located
-    def __init__(self, sink, thread_count = 3, max_index = 5, src_data_dir='./'):
+    def __init__(self, sink, thread_count = 3, src_data_dir='./'):
         self.sink = sink
         self.src_data_dir = src_data_dir
-        self.max_index = max_index
         # the number of threads to be used to load the files
         self.thread_count = thread_count
         # queue used for loading multiple dataset files concurrently
@@ -62,9 +67,8 @@ class WikipediaDatasetLoader:
     def __produce_data(self):
         # Open the dataset
         wikipedia_dataset = ds.dataset(self.src_data_dir, format="parquet")
-        print(f'{wikipedia_dataset.files}')
 
-        for table_chunk in wikipedia_dataset.to_batches(columns=["url", "title", "text"]):
+        for table_chunk in wikipedia_dataset.to_batches(columns=["id", "url", "title", "text"]):
             title = table_chunk.to_pandas()
             self.q.put(title)
 
@@ -83,7 +87,20 @@ class WikipediaDatasetLoader:
            
             # Item is a pandas DataFrame
             for idx in item.index:
-                print(f"{threading.get_native_id()} => {item['url'][idx]} : {item['title'][idx]}")
+                # Construct an elasticsearch document
+                id = item['id'][idx]
+                url = item['url'][idx]
+                title = item['title'][idx]
+                text = item['text'][idx]
+                print(f"{threading.get_native_id()} => {id}: {url}")
+
+                document = {
+                    "url": url,
+                    "title": title,
+                    "text": text
+                }
+
+                resp = self.sink.save(document)
 
             self.q.task_done()
         
@@ -94,13 +111,26 @@ class WikipediaDatasetLoader:
 
 class ElasticSearchBenchmark:
 
-    def __init__(self, max_index = 3):
+    def __init__(
+            self, 
+            elastic_url = 'http://localhost:9200',
+            elastic_username = 'elastic',
+            elastic_password = 'elastic',
+            max_index = 3,
+            ingest_thread_count = 3
+        ):
         data_dir = './test_data_dir'
         self.dataset_downloader = IndexedDatasetDownloader(max_index = max_index, dest_data_dir=data_dir)
         self.dataset_loader = WikipediaDatasetLoader(
-                sink = ElasticSearchSink(elastic_url = 'http://localhost:9200'),
-                max_index = max_index,
-                src_data_dir = data_dir)
+                sink = ElasticSearchSink(
+                    elastic_url = elastic_url,
+                    index='idx-articles',
+                    username=elastic_username,
+                    password=elastic_password,
+                ),
+                thread_count=ingest_thread_count,
+                src_data_dir = data_dir
+            )
 
     def take(self):
         self.dataset_downloader.download()
@@ -110,8 +140,16 @@ if __name__ == '__main__':
     args = parser.parse_args()
     print(args)
 
+    start_time = time.time()
     if args.target == 'elasticsearch':
-        benchmark = ElasticSearchBenchmark(max_index=args.num_files)
+        benchmark = ElasticSearchBenchmark(
+                max_index=args.num_files,
+                ingest_thread_count=args.ingest_thread_count
+        )
         benchmark.take()
     if args.target == 'mariadb':
         pass
+
+    end_time = time.time()
+    print(f'Total Elapsed Time: {end_time - start_time} seconds')
+
