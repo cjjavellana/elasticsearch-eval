@@ -30,6 +30,33 @@ A few hundred EC2 VMs were harmed in building this script.
 
 ## The Test Data
 
+## Running The Benchmark
+
+1. Create a virtual environment for the benchmark
+
+```bash
+$ cd benchmark
+$ python -m venv .venv
+$ source .venv/bin/activate
+$ pip install -r requirements.txt
+```
+
+2. Execute Benchmark
+
+For taking elasticsearch benchmark
+```bash
+$ python articles.py -t elasticsearch --num-files 10 --ingest-thread-count 10
+```
+
+See help documentation to know more of start up parameters
+```bash
+$ python articles.py --help
+```
+
+For taking mariadb benchmark
+```bash
+```
+
 ## Evaluation Criteria
 This section describes the evaluation criteria with which Elastic Search & MariaDB is to be evaluated.
 
