@@ -17,9 +17,10 @@ parser.add_argument('-t', '--target',
                     help='That target datastore.')
 parser.add_argument('-n', '--num-files', dest='num_files', type=int, help='The number of files to download')
 parser.add_argument('-c', '--ingest-thread-count', dest='ingest_thread_count', default=5, type=int, help='The number of threads to be used to write data to the destination datastore')
-parser.add_argument('--elastic-url', dest='elastic_url', help='The url of the elastic search cluster. Comma delimited.')
+parser.add_argument('--elastic-url', dest='elastic_url', default='http://localhost:9200', help='The url of the elastic search cluster. Comma delimited.')
 parser.add_argument('--elastic-username', dest='elastic_username', default='elastic', help='The username of the elastic search cluster')
-parser.add_argument('--elastic-password', dest='elastic_password', help='The password of the elastic search cluster')
+parser.add_argument('--elastic-password', dest='elastic_password', default='elastic', help='The password of the elastic search cluster')
+parser.add_argument('--skip-download-dataset', dest='skip_download_dataset', action=argparse.BooleanOptionalAction, help='Skips downloading dataset')
 
 class IngestStats:
 
@@ -126,33 +127,32 @@ class WikipediaDatasetLoader:
     def __should_quit(self, item):
         return isinstance(item, numbers.Number) and item == self.POISON_PILL
 
-class ElasticSearchBenchmark:
+class Benchmark:
 
     def __init__(
             self, 
-            elastic_url = 'http://localhost:9200',
-            elastic_username = 'elastic',
-            elastic_password = 'elastic',
+            sink,
             max_index = 3,
-            ingest_thread_count = 3
+            ingest_thread_count = 3,
+            skip_download_dataset = False
         ):
         data_dir = './test_data_dir'
         self.dataset_downloader = IndexedDatasetDownloader(max_index = max_index, dest_data_dir=data_dir)
         self.dataset_loader = WikipediaDatasetLoader(
-                sink = ElasticSearchSink(
-                    elastic_url = elastic_url,
-                    index='idx-articles',
-                    username=elastic_username,
-                    password=elastic_password,
-                ),
+                sink = sink,
                 thread_count=ingest_thread_count,
                 src_data_dir = data_dir
             )
+        self.skip_download_dataset = skip_download_dataset
 
     def take(self):
-        download_start_time = time.time()
-        self.dataset_downloader.download()
-        download_end_time = time.time()
+        download_start_time = 0
+        download_end_time = 0
+
+        if not self.skip_download_dataset:
+            download_start_time = time.time()
+            self.dataset_downloader.download()
+            download_end_time = time.time()
 
         ingest_start_time = time.time()
         load_stats = self.dataset_loader.load()
@@ -166,9 +166,16 @@ if __name__ == '__main__':
     print(args)
 
     if args.target == 'elasticsearch':
-        benchmark = ElasticSearchBenchmark(
-                max_index=args.num_files,
-                ingest_thread_count=args.ingest_thread_count
+        benchmark = Benchmark(
+                max_index = args.num_files,
+                sink = ElasticSearchSink(
+                    elastic_url = args.elastic_url,
+                    index='idx-articles',
+                    username = args.elastic_username,
+                    password = args.elastic_password,
+                ),
+                ingest_thread_count = args.ingest_thread_count,
+                skip_download_dataset = args.skip_download_dataset
         )
         benchmark.take()
     if args.target == 'mariadb':
