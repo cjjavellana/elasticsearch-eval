@@ -26,6 +26,13 @@ class IngestStats:
     def __init__(self, num_records):
         self.num_records = num_records
 
+class Article:
+
+    def __init__(self, url, title, text):
+        self.url = url
+        self.title = title
+        self.text = text
+
 class MariaDBSink:
 
     def __init__(self):
@@ -40,7 +47,12 @@ class ElasticSearchSink:
         self.elastic_client = Elasticsearch(self.elastic_url, basic_auth=(username, password))
         print(f'Client Info {self.elastic_client.info()}')
 
-    def save(self, document):
+    def save(self, article):
+        document = {
+            "url": article.url,
+            "title": article.title,
+            "text": article.text
+        }
         return self.elastic_client.index(index=self.index, document=document)
 
     def stats(self):
@@ -109,13 +121,7 @@ class WikipediaDatasetLoader:
            text = item['text'][idx]
            print(f"{threading.get_native_id()} => {url}")
 
-           document = {
-               "url": url,
-               "title": title,
-               "text": text
-           }
-
-           resp = self.sink.save(document)
+           resp = self.sink.save(Article(url, title, text))
 
     def __should_quit(self, item):
         return isinstance(item, numbers.Number) and item == self.POISON_PILL
