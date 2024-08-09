@@ -54,9 +54,11 @@
     elasticsearch_data_dir: /opt/elasticsearch/data
     elasticsearch_log_dir: /opt/elasticsearch/log
   tasks:
-    - name: Install Unzip
+    
+    - name: Install Python Virtual Env
       ansible.builtin.apt:
-        name: unzip
+        name: python3.12-venv
+        update_cache: yes
       become: yes
 
     - name: Create Elastic Search Directory
@@ -237,6 +239,21 @@
           "Please confirm that you would like to continue": 'y'
           "Enter password for": 'elastic'
           "Re-enter password for": 'elastic'
+
+    - name: Copy benchmark files
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: /opt/elasticsearch/benchmark/
+      with_fileglob: 
+        - "benchmark/*.py"
+        - "benchmark/*.txt"
+
+    - name: Generate client cert
+      ansible.builtin.expect: 
+        chdir: '/opt/elasticsearch/benchmark'
+        command: "openssl pkcs12 -in /opt/elasticsearch/{{ elasticsearch.version }}/elastic-stack-ca.p12 -out ca.crt -clcerts -nokeys"
+        responses:
+          "Enter Import Password": ''
 
 - name: Sets up certificate in nodes 2 & 3
   hosts: es_nodes_group[1:]
