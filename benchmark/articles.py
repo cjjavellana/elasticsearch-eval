@@ -95,26 +95,27 @@ class WikipediaDatasetLoader:
             if self.__should_quit(item):
                 self.q.task_done()
                 break
-           
-            # Item is a pandas DataFrame
-            for idx in item.index:
-                # Construct an elasticsearch document
-                url = item['url'][idx]
-                title = item['title'][idx]
-                text = item['text'][idx]
-                print(f"{threading.get_native_id()} => {url}")
 
-                document = {
-                    "url": url,
-                    "title": title,
-                    "text": text
-                }
-
-                resp = self.sink.save(document)
-
+            self.__process_item(item)
             self.q.task_done()
         
         print(f'Terminating {threading.get_native_id()}')
+
+    def __process_item(self, item):
+       for idx in item.index:
+           # Construct an elasticsearch document
+           url = item['url'][idx]
+           title = item['title'][idx]
+           text = item['text'][idx]
+           print(f"{threading.get_native_id()} => {url}")
+
+           document = {
+               "url": url,
+               "title": title,
+               "text": text
+           }
+
+           resp = self.sink.save(document)
 
     def __should_quit(self, item):
         return isinstance(item, numbers.Number) and item == self.POISON_PILL

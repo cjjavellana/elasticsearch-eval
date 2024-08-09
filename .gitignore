@@ -14,4 +14,4 @@ http.p12
 
 # This is a transient dir mounted to the elasticsearch container
 # for holding test data
-measure_elasticsearch/elasticsearch
+benchmark/elasticsearch
