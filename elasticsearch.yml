@@ -238,7 +238,7 @@
           "Enter password for": 'elastic'
           "Re-enter password for": 'elastic'
 
-- name: Setup certificates on other data nodes
+- name: Sets up certificate in nodes 2 & 3
   hosts: es_nodes_group[1:]
   gather_facts: False
   remote_user: ubuntu
