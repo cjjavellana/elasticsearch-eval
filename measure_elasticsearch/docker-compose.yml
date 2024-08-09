@@ -1,13 +1,15 @@
 # Generate docker compose configuration for mysql
-version: "3.8"
 services:
   elasticsearch:
-    image: elasticsearch:8.12.2
+    image: elasticsearch:8.15.0
     container_name: elasticsearch
     environment:
       - discovery.type=single-node
+      - ELASTIC_PASSWORD=elastic
+      - xpack.security.enabled=true
     ports:
       - "9200:9200"
+      - "9300:9300"
     volumes:
       - ./elasticsearch:/usr/share/elasticsearch/data
     restart: always
