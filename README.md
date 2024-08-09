@@ -28,7 +28,9 @@ This experiment relies on AWS. Ensure that you have an AWS account and that IAM 
 
 A few hundred EC2 VMs were harmed in building this script.
 
-## The Test Data
+## The Test Dataset
+
+Test data is a [wikipedia](https://huggingface.co/datasets/wikimedia/wikipedia/viewer/20231101.en) dump from huggingface. 
 
 ## Running The Benchmark
 
