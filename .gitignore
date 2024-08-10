@@ -6,6 +6,7 @@ unicast_hosts.txt
 
 # This file is dynamically generated
 elastic-certificates.p12
+elastic-stack-ca.p12
 http.p12
 
 **/__pycache__
