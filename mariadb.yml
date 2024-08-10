@@ -1,0 +1,46 @@
+---
+
+- hosts: localhost
+  connection: local
+  gather_facts: False
+
+  tasks:
+
+    - import_tasks: ec2.yml
+      vars:
+        ec2_name: MariaDB Instance
+        ec2_environment: MariaDB Evaluation
+        # 3-node MariaDB + 1 dataset loader node
+        count: 1
+        volume_size_gb: 300
+
+    # es_nodes_group will be are target hosts in subsequent plays later on
+    - name: Add EC2 instances to hosts
+      add_host:
+        name: '{{ item.public_dns_name }}'
+        groups: mariadb_nodes_group
+      loop: '{{ ec2.instances }}'
+
+    - name: Wait for SSH to come up
+      delegate_to: '{{ item.public_dns_name }}'
+      wait_for_connection:
+        delay: 30
+        timeout: 600
+      loop: '{{ ec2.instances }}'
+
+    - debug:
+        msg: "EC2 Public DNS Name: {{ item.public_dns_name }}"
+      loop: '{{ ec2.instances }}'
+
+- name: Install MariaDB on all 3 nodes
+  hosts: mariadb_nodes_group
+  gather_facts: False
+  remote_user: ubuntu
+  tasks:
+
+    - name: Install MariaDB Server
+      ansible.builtin.apt:
+        name: mariadb-server
+        update_cache: yes
+      become: yes
+
