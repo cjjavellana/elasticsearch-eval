@@ -66,5 +66,6 @@ This section describes the evaluation criteria with which Elastic Search & Maria
 |----|--------|--------------|-------|-------|
 |1   |Full-text Search| | | |
 |2   |Auto-completion| | | |
+|3   |Ingestion| 1716.346670627594 Seconds at 10 threads||||
 
 
