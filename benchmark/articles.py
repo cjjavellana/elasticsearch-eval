@@ -50,6 +50,8 @@ class ElasticSearchSink:
         self.username = username
         self.index = index
         self.elastic_client = None
+        self.lock = threading.Lock()
+        self.processed_documents_count = 0
 
         if ca_certs == None:
             self.elastic_client = Elasticsearch(self.elastic_url, basic_auth=(username, password))
@@ -57,6 +59,9 @@ class ElasticSearchSink:
             self.elastic_client = Elasticsearch(self.elastic_url, ca_certs = ca_certs, basic_auth=(username, password))
 
         print(f'Client Info {self.elastic_client.info()}')
+
+    def get_processed_documents_count(self):
+        return self.processed_documents_count
 
     def save(self, article):
         document = {
@@ -66,29 +71,40 @@ class ElasticSearchSink:
         }
         return self.elastic_client.index(index=self.index, document=document)
 
-    def save_bulk(self, articles):
-        documents = []
-        for a in articles:
-            documents.append({
-                "_op_type": "index",
-                "_index": self.index,
-                "url": a.url,
-                "title": a.title,
-                "text": a.text
-            })
+    def create_document(self, article):
+        return {
+            "_op_type": "index",
+            "_index": self.index,
+            "url": article.url,
+            "title": article.title,
+            "text": article.text
+        }
 
+    def save_bulk(self, articles):
         retry_attempt = 0
         while retry_attempt < self.MAX_RETRY_ATTEMPTS:
             try:
-                return bulk(self.elastic_client, documents)
+                bulk(self.elastic_client, articles)
+                self.__increment_processed_documents_count(len(articles))
+                return True
             except Exception as e:
                 print("Error", e)
                 retry_attempt += 1
                 time.sleep(0.05) # 50 millis
 
+        return False
+
     def stats(self):
-        document_count = self.elastic_client.count(index=self.index)
-        return IngestStats(num_records=document_count['count'])
+        try:
+            document_count = self.elastic_client.count(index=self.index)
+            return IngestStats(num_records=document_count['count'])
+        except:
+            return IngestStats(num_records=-1)
+
+    def __increment_processed_documents_count(self, by_how_much):
+        with self.lock:
+            self.processed_documents_count += by_how_much
+
 
 class WikipediaDatasetLoader:
 
@@ -140,9 +156,13 @@ class WikipediaDatasetLoader:
                 self.q.task_done()
                 break
 
-            self.__process_item(item)
+            is_processed_successfully = self.__process_item(item)
             self.q.task_done()
-        
+            
+            # if item is not successfully processed, put it back into the queue for reprocessing
+            if not is_processed_successfully:
+                self.q.put(item)
+
         print(f'Terminating {threading.get_native_id()}')
 
     def __process_item(self, item):
@@ -152,10 +172,12 @@ class WikipediaDatasetLoader:
             url = item['url'][idx]
             title = item['title'][idx]
             text = item['text'][idx]
-            articles.append(Article(url, title, text))
 
-        print(f"{threading.get_native_id()} => Saving {len(articles)} articles")
-        resp = self.sink.save_bulk(articles)
+            articles.append(self.sink.create_document(Article(url, title, text)))
+        
+        is_processed_successfully = self.sink.save_bulk(articles)
+        print(f"{threading.get_native_id()} => Articles Processed: {self.sink.get_processed_documents_count()}")
+        return is_processed_successfully
 
     def __should_quit(self, item):
         return isinstance(item, numbers.Number) and item == self.POISON_PILL
