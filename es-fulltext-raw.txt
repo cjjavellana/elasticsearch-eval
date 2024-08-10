@@ -1,0 +1,69 @@
+$ (.venv) ubuntu@ip-172-31-0-59:/opt/benchmark$ curl -u elastic:elastic -k -X GET "https://$m:9200/idx-articles/_search?from=40&size=20&pretty" -H 'Content-Type: application/json' -d'
+{
+  "query": {
+    "match": {
+      "text": "An American in Paris"
+    }
+  }
+}
+' | jq '.took'
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100 68786    0 68706  100    80  1438k   1714 --:--:-- --:--:-- --:--:-- 1460k
+25
+
+(.venv) ubuntu@ip-172-31-0-59:/opt/benchmark$ curl -u elastic:elastic -k -X GET "https://$m:9200/idx-articles/_search?from=40&size=20&pretty" -H 'Content-Type: application/json' -d'
+{
+  "query": {
+    "match": {
+      "text": "The Place of the Lion"
+    }
+  }
+}
+' | jq '.took'
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  122k    0  122k  100    81  1033k    683 --:--:-- --:--:-- --:--:-- 1029k
+95
+
+(.venv) ubuntu@ip-172-31-0-59:/opt/benchmark$ curl -u elastic:elastic -k -X GET "https://$m:9200/idx-articles/_search?from=40&size=20&pretty" -H 'Content-Type: application/json' -d'
+{
+  "query": {
+    "match": {
+      "text": "Golden-fronted bowerbird"
+    }
+  }
+}
+' | jq '.took'
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100 50701    0 50617  100    84   541k    920 --:--:-- --:--:-- --:--:--  544k
+72
+
+(.venv) ubuntu@ip-172-31-0-59:/opt/benchmark$ curl -u elastic:elastic -k -X GET "https://$m:9200/idx-articles/_search?from=40&size=20&pretty" -H 'Content-Type: application/json' -d'
+{
+  "query": {
+    "match": {
+      "text": "House of Horrors"
+    }
+  }
+}
+' | jq '.took'
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  155k    0  155k  100    76  1956k    955 --:--:-- --:--:-- --:--:-- 1970k
+53
+
+(.venv) ubuntu@ip-172-31-0-59:/opt/benchmark$ curl -u elastic:elastic -k -X GET "https://$m:9200/idx-articles/_search?from=40&size=20&pretty" -H 'Content-Type: application/json' -d'
+{
+  "query": {
+    "match": {
+      "text": "City of Cape Town"
+    }
+  }
+}
+' | jq '.took'
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100 88611    0 88534  100    77   883k    786 --:--:-- --:--:-- --:--:--  892k
+76
