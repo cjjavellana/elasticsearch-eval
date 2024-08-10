@@ -10,9 +10,11 @@
       vars:
         ec2_name: Elastic Search Instance
         ec2_environment: Elastic Search Evaluation
-        count: 3
+        # 3-node elastic cluster + 1 dataset loader node
+        count: 4
         volume_size_gb: 300
 
+    # es_nodes_group will be are target hosts in subsequent plays later on
     - name: Add EC2 instances to hosts
       add_host:
         name: '{{ item.public_dns_name }}'
@@ -22,7 +24,8 @@
     - name: Collects private dns names of the EC2 instances into the es_private_dns_names list
       set_fact:
         es_private_dns_names: "{{ es_private_dns_names | default([]) + [ item.private_dns_name | string ] }}"
-      loop: '{{ ec2.instances }}'
+      # exclude the last instance because we're going to use it as a dataset loader node
+      loop: '{{ ec2.instances[0:2] }}'
 
     - name: Wait for SSH to come up
       delegate_to: '{{ item.public_dns_name }}'
@@ -45,9 +48,9 @@
         dest: ./unicast_hosts.txt
       delegate_to: localhost
 
-- name: Install Elastic Search
-  hosts: es_nodes_group 
-  gather_facts: True
+- name: Install Elastic Search on all 3 nodes
+  hosts: es_nodes_group[0:2]
+  gather_facts: False
   remote_user: ubuntu
   vars:
     elasticsearch_arch: linux-x86_64
@@ -182,6 +185,12 @@
         src: '/opt/elasticsearch/{{ elasticsearch.version }}/elastic-certificates.p12'
         dest: './'
         flat: true
+    
+    - name: Copy generated certs to local
+      ansible.builtin.fetch:
+        src: '/opt/elasticsearch/{{ elasticsearch.version }}/elastic-stack-ca.p12'
+        dest: './'
+        flat: true
 
     - name: Read Private Hostnames from unicast_hosts file
       set_fact:
@@ -240,27 +249,11 @@
           "Enter password for": 'elastic'
           "Re-enter password for": 'elastic'
 
-    - name: Copy benchmark files
-      ansible.builtin.copy:
-        src: "{{ item }}"
-        dest: /opt/elasticsearch/benchmark/
-      with_fileglob: 
-        - "benchmark/*.py"
-        - "benchmark/*.txt"
-
-    - name: Generate client cert
-      ansible.builtin.expect: 
-        chdir: '/opt/elasticsearch/benchmark'
-        command: "openssl pkcs12 -in /opt/elasticsearch/{{ elasticsearch.version }}/elastic-stack-ca.p12 -out ca.crt -clcerts -nokeys"
-        responses:
-          "Enter Import Password": ''
-
 - name: Sets up certificate in nodes 2 & 3
-  hosts: es_nodes_group[1:]
+  hosts: es_nodes_group[1:2]
   gather_facts: False
   remote_user: ubuntu
   tasks:
-
     - name: Setup certificate
       ansible.builtin.copy:
         src: elastic-certificates.p12
@@ -279,3 +272,50 @@
         chdir: '/opt/elasticsearch/{{ elasticsearch.version }}'
       register: espid
 
+- hosts: es_nodes_group[-1]
+  gather_facts: False
+  remote_user: ubuntu
+  tasks:
+
+    - name: Install Python Virtual Env
+      ansible.builtin.apt:
+        name: python3.12-venv
+        update_cache: yes
+      become: yes
+
+    - name: Create Benchmark Directory
+      ansible.builtin.file:
+        path: /opt/benchmark
+        owner: ubuntu
+        group: ubuntu
+        state: directory
+        mode: '0755'
+      become: yes
+
+    - name: Copy unicast_hosts.txt to the benchmark node just for reference
+      ansible.builtin.copy:
+        src: unicast_hosts.txt
+        dest: '/opt/benchmark/unicast_hosts.txt'
+        mode: '0644'
+
+    - name: Setup certificate authority
+      ansible.builtin.copy:
+        src: elastic-stack-ca.p12
+        dest: '/opt/benchmark/elastic-stack-ca.p12'
+        mode: '0644'
+ 
+    - name: Copy benchmark files
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: /opt/benchmark/
+      with_fileglob: 
+        - "benchmark/*.py"
+        - "benchmark/*.txt"
+        - "benchmark/*.sh"
+
+    - name: Generate client cert
+      ansible.builtin.expect: 
+        chdir: '/opt/benchmark'
+        command: "openssl pkcs12 -in /opt/benchmark/elastic-stack-ca.p12 -out ca.crt -clcerts -nokeys"
+        responses:
+          "Enter Import Password": ''
