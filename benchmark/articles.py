@@ -84,7 +84,7 @@ class ElasticSearchSink:
             except Exception as e:
                 print("Error", e)
                 retry_attempt += 1
-                time.sleep(0.05) # 20 millis
+                time.sleep(0.05) # 50 millis
 
     def stats(self):
         document_count = self.elastic_client.count(index=self.index)
