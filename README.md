@@ -30,7 +30,7 @@ A few hundred EC2 VMs were harmed in building this script.
 
 ## The Test Dataset
 
-Test data is a [wikipedia](https://huggingface.co/datasets/wikimedia/wikipedia/viewer/20231101.en) dump from huggingface. 
+Test data is a [wikipedia](https://huggingface.co/datasets/wikimedia/wikipedia/viewer/20231101.en) dump from huggingface. The size of the dataset is approx 11GB.
 
 ## Running The Benchmark
 
