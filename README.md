@@ -64,7 +64,7 @@ This section describes the evaluation criteria with which Elastic Search & Maria
 
 |S/No|Criteria|Elastic Search|MariaDB|Remarks|
 |----|--------|--------------|-------|-------|
-|1   |Full-text Search| | | |
+|1   |Full-text Search| 25-72 ms | | 11GB Dataset / 6.4M Records|
 |2   |Auto-completion| | | |
 |3   |Ingestion| 1716.346670627594 Seconds at 10 threads||||
 
