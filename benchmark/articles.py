@@ -8,6 +8,7 @@ import time
 import pyarrow.dataset as ds
 
 from elasticsearch import Elasticsearch
+from elasticsearch.helpers import bulk
 from datasetdownloader import IndexedDatasetDownloader
 
 parser = argparse.ArgumentParser(description='Take full-text search benchmark between elastic search & mariadb')
@@ -42,6 +43,8 @@ class MariaDBSink:
 
 class ElasticSearchSink:
 
+    MAX_RETRY_ATTEMPTS = 3
+
     def __init__(self, index, elastic_url, username = None, password = None, ca_certs = None):
         self.elastic_url = elastic_url
         self.username = username
@@ -63,6 +66,26 @@ class ElasticSearchSink:
         }
         return self.elastic_client.index(index=self.index, document=document)
 
+    def save_bulk(self, articles):
+        documents = []
+        for a in articles:
+            documents.append({
+                "_op_type": "index",
+                "_index": self.index,
+                "url": a.url,
+                "title": a.title,
+                "text": a.text
+            })
+
+        retry_attempt = 0
+        while retry_attempt < self.MAX_RETRY_ATTEMPTS:
+            try:
+                return bulk(self.elastic_client, documents)
+            except Exception as e:
+                print("Error", e)
+                retry_attempt += 1
+                time.sleep(0.05) # 20 millis
+
     def stats(self):
         document_count = self.elastic_client.count(index=self.index)
         return IngestStats(num_records=document_count['count'])
@@ -81,7 +104,7 @@ class WikipediaDatasetLoader:
         # the number of threads to be used to load the files
         self.thread_count = thread_count
         # queue used for loading multiple dataset files concurrently
-        self.q = queue.Queue()
+        self.q = queue.Queue(maxsize=1000)
 
     def load(self):
         # Create consumer threads
@@ -99,7 +122,8 @@ class WikipediaDatasetLoader:
         # Open the dataset
         wikipedia_dataset = ds.dataset(self.src_data_dir, format="parquet")
 
-        for table_chunk in wikipedia_dataset.to_batches(columns=["url", "title", "text"]):
+        for table_chunk in wikipedia_dataset.to_batches(
+                columns=["url", "title", "text"], batch_size=10_000, batch_readahead=4, use_threads = False):
             title = table_chunk.to_pandas()
             self.q.put(title)
 
@@ -122,14 +146,16 @@ class WikipediaDatasetLoader:
         print(f'Terminating {threading.get_native_id()}')
 
     def __process_item(self, item):
-       for idx in item.index:
-           # Construct an elasticsearch document
-           url = item['url'][idx]
-           title = item['title'][idx]
-           text = item['text'][idx]
-           print(f"{threading.get_native_id()} => {url}")
+        articles = []
+        for idx in item.index:
+            # Construct an elasticsearch document
+            url = item['url'][idx]
+            title = item['title'][idx]
+            text = item['text'][idx]
+            articles.append(Article(url, title, text))
 
-           resp = self.sink.save(Article(url, title, text))
+        print(f"{threading.get_native_id()} => Saving {len(articles)} articles")
+        resp = self.sink.save_bulk(articles)
 
     def __should_quit(self, item):
         return isinstance(item, numbers.Number) and item == self.POISON_PILL
