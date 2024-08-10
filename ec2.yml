@@ -17,8 +17,9 @@
     key_name: '{{ aws.ec2_key_name }}'
     profile: '{{ aws.profile }}'
     region: '{{ aws.region }}'
-    # 8 vCPU 16 GB RAM
-    instance_type: c5.2xlarge
+    # c5.2xlarge: 8 vCPU 16 GB 
+    # t3a.2xlarge: 8 vCPU 32 GB 
+    instance_type: t3a.2xlarge
     vpc_subnet_id: '{{ aws.dest_subnet }}'
     network:
       assign_public_ip: true
