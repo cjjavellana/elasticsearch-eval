@@ -29,7 +29,7 @@
       loop: '{{ ec2.instances }}'
 
     - debug:
-        msg: "EC2 Public DNS Name: {{ item.public_dns_name }}"
+        msg: 'EC2 Public DNS Name: {{ item.public_dns_name }}'
       loop: '{{ ec2.instances }}'
 
 - name: Install MariaDB on all 3 nodes
@@ -44,3 +44,24 @@
         update_cache: yes
       become: yes
 
+    - name: MySQL Secure Installation
+      ansible.builtin.expect:
+        command: 'mysql_secure_installation'
+        responses:
+          'Enter current password for root': ''
+          'Switch to unix_socket authentication': 'n'
+          'Change the root password': 'Y'
+          'New password': 'root'
+          'Re-enter new password': 'root'
+          'Remove anonymous users': 'Y'
+          'Disallow root login remotely': 'Y'
+          'Remove test database and access to it': 'Y'
+          'Reload privilege tables now': 'Y'
+      become: yes
+
+    - name: Configure Bind Address
+      ansible.builtin.lineinfile:
+        path: '/etc/mysql/mariadb.conf.d/50-server.cnf'
+        regexp: '^bind-address.*$'
+        line: 'bind-address = 0.0.0.0'
+      become: yes
